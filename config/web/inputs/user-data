@@ -1,0 +1,131 @@
+Content-Type: multipart/mixed; boundary="===============4338801259390680329=="
+MIME-Version: 1.0
+
+--===============4338801259390680329==
+Content-Type: text/x-shellscript; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="script.sh"
+
+#!/bin/bash
+
+
+echo "Configuring required services " | tee -a  /tmp/sainsburys.log
+
+systemctl stop nginx 
+systemctl disable nginx 
+systemctl enable docker.socket
+systemctl start docker.socket
+systemctl enable docker.service
+systemctl start docker.service
+systemctl enable goapp
+systemctl start goapp
+systemctl enable goapp1
+systemctl start goapp1
+systemctl enable nginxapp
+systemctl start nginxapp
+
+
+
+if [ `hostname | head -c 9` == "appserver" ];
+then
+  echo "Starting AppServer services " | tee -a  /tmp/sainsburys.log
+
+else
+  echo "Starting WebServer services " | tee -a  /tmp/sainsburys.log
+
+fi
+
+echo "Configuring required services : Completed " | tee -a  /tmp/sainsburys.log
+
+
+--===============4338801259390680329==
+Content-Type: text/cloud-config; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="cloud-config"
+
+#cloud-config
+
+final_message: "The system is finally up, after $UPTIME seconds"
+packages: 
+  - docker.io
+runcmd: 
+  - "curl -L https://github.com/kelseyhightower/confd/releases/download/v0.10.0/confd-0.10.0-linux-amd64 -o /usr/bin/confd"
+  - "chmod 755 /usr/bin/confd"
+users: 
+  - 
+    name: sainsburry
+    shell: /bin/bash
+    ssh-authorized-keys: 
+      - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDgodqv6uAMpTmy+lr+3HYXqzqFbzMVkjpEdvU1amNsdb1II4Q4RV/VP1U1kIaFXg8bc/2ppgRm8jTij+LsZz8jTQ9+PDa4gO7py/FVs5OznBCQIv3LnruFzrPvFrKzLGiuQoHMg7HlH3/9Dnf96JYPHkQvp2MR/Nq6df5Uh6eaXusf9NSE8wLm50a8DgDtNZazO7t0Q+dc5/6WKn2Z9fOazYi710JwiZ8kRDYzqr3bZ9O/9hDbuH1b4hMzlmlbqgQCuuHy0mH0JZ+K5LeizD7MsjiI4HuBYNpGK3peGkvFfPJXN7TsVhpbHWpRKPbgrMrp9niFUiTee4sfXN2UmEN5 mahny@Emmanuels-iMac.home"
+write_files: 
+  - 
+    content: "127.0.0.1 localhost\n\
+        172.17.8.101 webserver01\n\
+        172.17.8.111 appserver01 \n\
+        172.17.8.112 appserver02 \n"
+    path: etc/hosts
+  - 
+    content: |
+        [Unit]
+        Description=Go Screening Service
+        Requires=docker.service
+        
+        [Service]
+        TimeoutStartSec=0
+        Restart=always
+        RestartSec=10s
+        ExecStartPre=/bin/rm -rf /tmp/goapp /tmp/goapp-sites
+        ExecStartPre=/bin/mkdir /tmp/goapp-sites
+        ExecStartPre=/usr/bin/git  clone https://github.com/esolomo/myconfig.git /tmp/goapp
+        ExecStartPre=/usr/bin/docker pull ubuntu:15.04
+        ExecStart=/usr/bin/docker run --rm --name goapp   -e SERVICE_ID=screening.internal -v /tmp/goapp/confd:/etc/confd -v /usr/bin/confd:/usr/local/bin/confd -v /tmp/goapp-sites:/sites -w /sites/ -e HOST_IP=10.152.253.1 -p 8484:8484 -e CM=172.17.8.101 --entrypoint=/etc/confd/bin/init ubuntu:15.04 
+        ExecStop=/usr/bin/docker rm -f goapp
+        
+        [Install]
+        WantedBy=multi-user.target
+    path: /lib/systemd/system/goapp.service
+  - 
+    content: |
+        [Unit]
+        Description=Go Screening Service 1
+        Requires=docker.service
+        
+        [Service]
+        TimeoutStartSec=0
+        Restart=always
+        RestartSec=10s
+        ExecStartPre=/bin/rm -rf /tmp/goapp1 /tmp/goapp1-sites
+        ExecStartPre=/bin/mkdir /tmp/goapp1-sites
+        ExecStartPre=/usr/bin/git  clone https://github.com/esolomo/myconfig.git /tmp/goapp1
+        ExecStartPre=/usr/bin/docker pull ubuntu:15.04
+        ExecStart=/usr/bin/docker run --rm --name goapp1   -e SERVICE_ID=screening.internal -v /tmp/goapp1/confd:/etc/confd -v /usr/bin/confd:/usr/local/bin/confd -v /tmp/goapp1-sites:/sites -w /sites/ -e HOST_IP=10.152.253.1 -p 8485:8484 -e CM=172.17.8.101 --entrypoint=/etc/confd/bin/init ubuntu:15.04 
+        ExecStop=/usr/bin/docker rm -f goapp1
+        
+        [Install]
+        WantedBy=multi-user.target
+    path: /lib/systemd/system/goapp1.service
+  - 
+    content: |
+        [Unit]
+        Description=Nginx App for Go App
+        Requires=goapp.service
+        
+        [Service]
+        TimeoutStartSec=0
+        Restart=always
+        RestartSec=10s
+        ExecStartPre=-/bin/rm -rf /tmp/nginx /tmp/nginx-sites
+        ExecStartPre=-/bin/mkdir /tmp/nginx-sites
+        ExecStartPre=-/usr/bin/git  clone https://github.com/esolomo/myconfig.git /tmp/nginx
+        ExecStartPre=/usr/bin/docker pull ubuntu:15.04
+        ExecStart=/usr/bin/docker run --rm --name nginx   -e SERVICE_ID=nginx.internal -v /tmp/nginx/confd:/etc/confd -v /usr/bin/confd:/usr/local/bin/confd -v /tmp/nginx-sites:/sites -w /sites/ -e HOST_IP=10.152.253.1 -p 80:80 -e CM=172.17.8.101 --entrypoint=/etc/confd/bin/init ubuntu:15.04 
+        ExecStop=/usr/bin/docker rm -f nginx
+        ExecStopPost=-/bin/rm -rf /tmp/nginx /tmp/nginx-sites
+        
+        [Install]
+        WantedBy=multi-user.target
+    path: /lib/systemd/system/nginxapp.service
+
+--===============4338801259390680329==--
